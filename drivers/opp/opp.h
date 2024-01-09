@@ -126,7 +126,7 @@ enum opp_table_access {
  * @dev_list:	list of devices that share these OPPs
  * @opp_list:	table of opps
  * @kref:	for reference count of the table.
- * @lock:	mutex protecting the opp_list and dev_list.
+ * @lock:	mutex protecting the opp_list.
  * @np:		struct device_node pointer for opp's DT node.
  * @clock_latency_ns_max: Max clock latency in nanoseconds.
  * @shared_opp: OPP is shared between multiple devices.
@@ -136,7 +136,9 @@ enum opp_table_access {
  * @prop_name: A name to postfix to many DT properties, while parsing them.
  * @clk: Device's clock handle
  * @regulators: Supply regulators
- * @regulator_count: Number of power supply regulators
+ * @regulator_count: Number of power supply regulators. Its value can be -1
+ * (uninitialized), 0 (no opp-microvolt property) or > 0 (has opp-microvolt
+ * property).
  * @genpd_performance_state: Device's power domain support performance state.
  * @set_opp: Platform specific set_opp callback
  * @set_opp_data: Data to be passed to set_opp callback
@@ -172,7 +174,7 @@ struct opp_table {
 	const char *prop_name;
 	struct clk *clk;
 	struct regulator **regulators;
-	unsigned int regulator_count;
+	int regulator_count;
 	bool genpd_performance_state;
 
 	int (*set_opp)(struct dev_pm_set_opp_data *data);
