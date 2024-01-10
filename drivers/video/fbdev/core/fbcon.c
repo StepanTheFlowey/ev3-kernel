@@ -132,7 +132,7 @@ static int info_idx = -1;
 /* console rotation */
 static int initial_rotation = -1;
 static int fbcon_has_sysfs;
-static int margin_color = 7;
+static int margin_color = 15;
 
 static const struct consw fb_con;
 
