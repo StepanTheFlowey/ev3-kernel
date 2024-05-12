@@ -325,7 +325,7 @@
 	 */
 	adc_ref: regulator2 {
 		compatible = "regulator-fixed";
-		regulator-name = "adc ref";
+		regulator-name = "adc_ref";
 		regulator-min-microvolt = <2500000>;
 		regulator-max-microvolt = <2500000>;
 		regulator-boot-on;
