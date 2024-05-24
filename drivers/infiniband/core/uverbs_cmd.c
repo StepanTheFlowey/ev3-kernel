@@ -1726,7 +1726,7 @@ ssize_t ib_uverbs_open_qp(struct ib_uverbs_file *file,
 	struct ib_udata                 udata;
 	struct ib_uqp_object           *obj;
 	struct ib_xrcd		       *xrcd;
-	struct ib_uobject	       *uninitialized_var(xrcd_uobj);
+	struct ib_uobject	       *xrcd_uobj;
 	struct ib_qp                   *qp;
 	struct ib_qp_open_attr          attr;
 	int ret;
@@ -2041,8 +2041,13 @@ static int modify_qp(struct ib_uverbs_file *file,
 		attr->path_mtu = cmd->base.path_mtu;
 	if (cmd->base.attr_mask & IB_QP_PATH_MIG_STATE)
 		attr->path_mig_state = cmd->base.path_mig_state;
-	if (cmd->base.attr_mask & IB_QP_QKEY)
+	if (cmd->base.attr_mask & IB_QP_QKEY) {
+		if (cmd->base.qkey & IB_QP_SET_QKEY && !capable(CAP_NET_RAW)) {
+			ret = -EPERM;
+			goto release_qp;
+		}
 		attr->qkey = cmd->base.qkey;
+	}
 	if (cmd->base.attr_mask & IB_QP_RQ_PSN)
 		attr->rq_psn = cmd->base.rq_psn;
 	if (cmd->base.attr_mask & IB_QP_SQ_PSN)
@@ -2914,12 +2919,6 @@ static int kern_spec_to_ib_spec_action(struct ib_uverbs_file *ufile,
 	return 0;
 }
 
-static size_t kern_spec_filter_sz(const struct ib_uverbs_flow_spec_hdr *spec)
-{
-	/* Returns user space filter size, includes padding */
-	return (spec->size - sizeof(struct ib_uverbs_flow_spec_hdr)) / 2;
-}
-
 static ssize_t spec_filter_size(const void *kern_spec_filter, u16 kern_filter_size,
 				u16 ib_real_filter_sz)
 {
@@ -3063,11 +3062,16 @@ int ib_uverbs_kern_spec_to_ib_spec_filter(enum ib_flow_spec_type type,
 static int kern_spec_to_ib_spec_filter(struct ib_uverbs_flow_spec *kern_spec,
 				       union ib_flow_spec *ib_spec)
 {
-	ssize_t kern_filter_sz;
+	size_t kern_filter_sz;
 	void *kern_spec_mask;
 	void *kern_spec_val;
 
-	kern_filter_sz = kern_spec_filter_sz(&kern_spec->hdr);
+	if (check_sub_overflow((size_t)kern_spec->hdr.size,
+			       sizeof(struct ib_uverbs_flow_spec_hdr),
+			       &kern_filter_sz))
+		return -EINVAL;
+
+	kern_filter_sz /= 2;
 
 	kern_spec_val = (void *)kern_spec +
 		sizeof(struct ib_uverbs_flow_spec_hdr);
@@ -3690,7 +3694,7 @@ static int __uverbs_create_xsrq(struct ib_uverbs_file *file,
 	struct ib_usrq_object           *obj;
 	struct ib_pd                    *pd;
 	struct ib_srq                   *srq;
-	struct ib_uobject               *uninitialized_var(xrcd_uobj);
+	struct ib_uobject               *xrcd_uobj;
 	struct ib_srq_init_attr          attr;
 	int ret;
 	struct ib_device *ib_dev;

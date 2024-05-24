@@ -11,13 +11,14 @@
 #include <linux/utime.h>
 #include <linux/file.h>
 
-static ssize_t __init xwrite(int fd, const char *p, size_t count)
+static ssize_t __init xwrite(struct file *file, const char *p, size_t count,
+		loff_t *pos)
 {
 	ssize_t out = 0;
 
 	/* sys_write only can write MAX_RW_COUNT aka 2G-4K bytes at most */
 	while (count) {
-		ssize_t rv = ksys_write(fd, p, count);
+		ssize_t rv = kernel_write(file, p, count, pos);
 
 		if (rv < 0) {
 			if (rv == -EINTR || rv == -EAGAIN)
@@ -315,7 +316,8 @@ static int __init maybe_link(void)
 	return 0;
 }
 
-static __initdata int wfd;
+static __initdata struct file *wfile;
+static __initdata loff_t wfile_pos;
 
 static int __init do_name(void)
 {
@@ -332,16 +334,17 @@ static int __init do_name(void)
 			int openflags = O_WRONLY|O_CREAT;
 			if (ml != 1)
 				openflags |= O_TRUNC;
-			wfd = ksys_open(collected, openflags, mode);
+			wfile = filp_open(collected, openflags, mode);
+			if (IS_ERR(wfile))
+				return 0;
+			wfile_pos = 0;
 
-			if (wfd >= 0) {
-				ksys_fchown(wfd, uid, gid);
-				ksys_fchmod(wfd, mode);
-				if (body_len)
-					ksys_ftruncate(wfd, body_len);
-				vcollected = kstrdup(collected, GFP_KERNEL);
-				state = CopyFile;
-			}
+			vfs_fchown(wfile, uid, gid);
+			vfs_fchmod(wfile, mode);
+			if (body_len)
+				vfs_truncate(&wfile->f_path, body_len);
+			vcollected = kstrdup(collected, GFP_KERNEL);
+			state = CopyFile;
 		}
 	} else if (S_ISDIR(mode)) {
 		ksys_mkdir(collected, mode);
@@ -363,16 +366,16 @@ static int __init do_name(void)
 static int __init do_copy(void)
 {
 	if (byte_count >= body_len) {
-		if (xwrite(wfd, victim, body_len) != body_len)
+		if (xwrite(wfile, victim, body_len, &wfile_pos) != body_len)
 			error("write error");
-		ksys_close(wfd);
+		fput(wfile);
 		do_utime(vcollected, mtime);
 		kfree(vcollected);
 		eat(body_len);
 		state = SkipIt;
 		return 0;
 	} else {
-		if (xwrite(wfd, victim, byte_count) != byte_count)
+		if (xwrite(wfile, victim, byte_count, &wfile_pos) != byte_count)
 			error("write error");
 		body_len -= byte_count;
 		eat(byte_count);
@@ -599,31 +602,29 @@ static void __init clean_rootfs(void)
 }
 #endif
 
-/*
- * U-boot image header definitions from u-boot/image.h
- */
+#ifdef CONFIG_BLK_DEV_RAM
+static void __init populate_initrd_image(char *err)
+{
+	ssize_t written;
+	struct file *file;
+	loff_t pos = 0;
 
-#define IH_MAGIC        0x27051956      /* Image Magic Number           */
-#define IH_NMLEN                32      /* Image Name Length            */
+	unpack_to_rootfs(__initramfs_start, __initramfs_size);
 
-/*
- * Legacy format image header,
- * all data in network byte order (aka natural aka bigendian).
- */
-typedef struct image_header {
-	uint32_t        ih_magic;       /* Image Header Magic Number    */
-	uint32_t        ih_hcrc;        /* Image Header CRC Checksum    */
-	uint32_t        ih_time;        /* Image Creation Timestamp     */
-	uint32_t        ih_size;        /* Image Data Size              */
-	uint32_t        ih_load;        /* Data  Load  Address          */
-	uint32_t        ih_ep;          /* Entry Point Address          */
-	uint32_t        ih_dcrc;        /* Image Data CRC Checksum      */
-	uint8_t         ih_os;          /* Operating System             */
-	uint8_t         ih_arch;        /* CPU architecture             */
-	uint8_t         ih_type;        /* Image Type                   */
-	uint8_t         ih_comp;        /* Compression Type             */
-	uint8_t         ih_name[IH_NMLEN];      /* Image Name           */
-} image_header_t;
+	printk(KERN_INFO "rootfs image is not initramfs (%s); looks like an initrd\n",
+			err);
+	file = filp_open("/initrd.image", O_WRONLY|O_CREAT|O_LARGEFILE, 0700);
+	if (IS_ERR(file))
+		return;
+
+	written = xwrite(file, (char *)initrd_start, initrd_end - initrd_start,
+			&pos);
+	if (written != initrd_end - initrd_start)
+		pr_err("/initrd.image: incomplete write (%zd != %ld)\n",
+		       written, initrd_end - initrd_start);
+	fput(file);
+}
+#endif /* CONFIG_BLK_DEV_RAM */
 
 static int __init populate_rootfs(void)
 {
@@ -634,54 +635,14 @@ static int __init populate_rootfs(void)
 	/* If available load the bootloader supplied initrd */
 	if (initrd_start && !IS_ENABLED(CONFIG_INITRAMFS_FORCE)) {
 #ifdef CONFIG_BLK_DEV_RAM
-		int fd;
-		unsigned long start, end;
-		image_header_t *header = (image_header_t *)initrd_start;
-
-		/*
-		 * This is a workaround for the LEGO Mindstorms EV3. The U-boot
-		 * bootloader on the EV3 is flashed when you do a firmware
-		 * update, so we don't have control over it. The U-boot version
-		 * in the offical firmware is an older version (2009.11) and
-		 * does not properly set ATAG_INITRD2 (or ATAG_INITRD for that
-		 * matter). We can pass the initrd to the kernel using the
-		 * initrd boot parameter, but it expects a gzip file and if the
-		 * contents are a initramfs (cpio) image rather than a legacy
-		 * initrd, then we also have to know the exact size, which we
-		 * cannot get from u-boot. The flash-kernel tools create a
-		 * u-boot image with a initramfs, so we just have to look for
-		 * it and extract the actual initramfs file information from it.
-		 */
-
-		if (ntohl(header->ih_magic) == IH_MAGIC) {
-			start = initrd_start + sizeof(image_header_t);
-			end = start + ntohl(header->ih_size);
-		} else {
-			start = initrd_start;
-			end = initrd_end;
-		}
-
 		printk(KERN_INFO "Trying to unpack rootfs image as initramfs...\n");
-		err = unpack_to_rootfs((char *)start, end - start);
+		err = unpack_to_rootfs((char *)initrd_start,
+			initrd_end - initrd_start);
 		if (!err)
 			goto done;
 
 		clean_rootfs();
-		unpack_to_rootfs(__initramfs_start, __initramfs_size);
-
-		printk(KERN_INFO "rootfs image is not initramfs (%s)"
-				"; looks like an initrd\n", err);
-		fd = ksys_open("/initrd.image",
-			      O_WRONLY|O_CREAT, 0700);
-		if (fd >= 0) {
-			ssize_t written = xwrite(fd, (char *)start, end - start);
-
-			if (written != initrd_end - initrd_start)
-				pr_err("/initrd.image: incomplete write (%zd != %ld)\n",
-				       written, initrd_end - initrd_start);
-
-			ksys_close(fd);
-		}
+		populate_initrd_image(err);
 	done:
 		/* empty statement */;
 #else
