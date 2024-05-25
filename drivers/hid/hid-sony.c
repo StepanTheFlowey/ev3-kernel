@@ -501,7 +501,7 @@ struct motion_output_report_02 {
 #define DS4_TOUCHPAD_SUFFIX " Touchpad"
 
 /* Default to 4ms poll interval, which is same as USB (not adjustable). */
-#define DS4_BT_DEFAULT_POLL_INTERVAL_MS 10 /* changed for ev3dev */
+#define DS4_BT_DEFAULT_POLL_INTERVAL_MS 4
 #define DS4_BT_MAX_POLL_INTERVAL_MS 62
 #define DS4_GYRO_RES_PER_DEG_S 1024
 #define DS4_ACC_RES_PER_G      8192
@@ -1561,21 +1561,6 @@ static int sixaxis_set_operational_bt(struct hid_device *hdev)
 	static const u8 report[] = { 0xf4, 0x42, 0x03, 0x00, 0x00 };
 	u8 *buf;
 	int ret;
-	unsigned char enable_gasia[] = {
-		0xA2,
-		0x01,
-		/* 0x00, right-timeout, right-force, left-timeout, left-force */
-		0x00, 0x00, 0x00, 0x00, 0x00,   /* rumble values */
-		0x00, 0x00, 0x00, 0x00, 0x02,   /* 0x02=LED1 .. 0x10=LED4 */
-		0xff, 0x27, 0x10, 0x00, 0x32,   /* LED 4 */
-		0xff, 0x27, 0x10, 0x00, 0x32,   /* LED 3 */
-		0xff, 0x27, 0x10, 0x00, 0x32,   /* LED 2 */
-		0xff, 0x27, 0x10, 0x00, 0x32,   /* LED 1 */
-		0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00
-	};
 
 	buf = kmemdup(report, sizeof(report), GFP_KERNEL);
 	if (!buf)
@@ -1583,9 +1568,6 @@ static int sixaxis_set_operational_bt(struct hid_device *hdev)
 
 	ret = hid_hw_raw_request(hdev, buf[0], buf, sizeof(report),
 				  HID_FEATURE_REPORT, HID_REQ_SET_REPORT);
-	hid_hw_raw_request(hdev, enable_gasia[0], enable_gasia,
-			   sizeof(enable_gasia), HID_FEATURE_REPORT,
-			   HID_REQ_SET_REPORT);
 
 	kfree(buf);
 
