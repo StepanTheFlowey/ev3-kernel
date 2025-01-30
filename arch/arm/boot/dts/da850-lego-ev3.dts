@@ -40,7 +40,6 @@
 			reg = <0x80000000 0x2000>;
 			no-map;
 		};
-
 	};
 
 	soc@1c00000 {
@@ -140,25 +139,25 @@
 				    "mcasp";
 			interrupt-parent = <&pru_intc>;
 			interrupts = <31 0xffffffff 0>,
-			 	     <32 0xffffffff 0>,
-			 	     //<33 0xffffffff 1>,
-			 	     <34 0xffffffff 2>,
-			 	     <35 0xffffffff 2>,
-			 	     <36 0xffffffff 3>,
-			 	     <37 0xffffffff 3>;
-			 	     //<38 0xffffffff 4>,
-			 	     //<39 0xffffffff 4>,
-			 	     //<40 0xffffffff 5>,
-			 	     //<41 0xffffffff 5>,
-			 	     //<42 0xffffffff 6>,
-			 	     //<33 0xffffffff 6>,
-			 	     //<34 0xffffffff 7>,
-			 	     //<45 0xffffffff 7>,
-			 	     //<46 0xffffffff 8>,
-			 	     //<47 0xffffffff 8>,
-			 	     //<48 0xffffffff 9>,
-			 	     //<49 0xffffffff 9>,
-			 	     //<50 0xffffffff 1>;
+				     <32 0xffffffff 0>,
+				     //<33 0xffffffff 1>,
+				     <34 0xffffffff 2>,
+				     <35 0xffffffff 2>,
+				     <36 0xffffffff 3>,
+				     <37 0xffffffff 3>;
+				     //<38 0xffffffff 4>,
+				     //<39 0xffffffff 4>,
+				     //<40 0xffffffff 5>,
+				     //<41 0xffffffff 5>,
+				     //<42 0xffffffff 6>,
+				     //<33 0xffffffff 6>,
+				     //<34 0xffffffff 7>,
+				     //<45 0xffffffff 7>,
+				     //<46 0xffffffff 8>,
+				     //<47 0xffffffff 8>,
+				     //<48 0xffffffff 9>,
+				     //<49 0xffffffff 9>,
+				     //<50 0xffffffff 1>;
 			interrupt-names = "mcasp",
 					  "arm-to-pru0",
 					  //"arm-to-pru1",
